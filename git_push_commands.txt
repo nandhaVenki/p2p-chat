@@ -1,0 +1,11 @@
+# Commands to push your code to GitHub:
+# Run these in your terminal window inside F:\2026\Android\chatApp\
+
+# 1. Add your GitHub repository as the remote destination
+git remote add origin https://github.com/YOUR_GITHUB_USERNAME/p2p-chat.git
+
+# 2. Rename the default branch to 'main'
+git branch -M main
+
+# 3. Push your code to GitHub (this will open a browser window to sign in)
+git push -u origin main

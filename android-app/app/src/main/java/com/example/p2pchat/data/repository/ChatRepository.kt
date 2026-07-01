@@ -84,7 +84,7 @@ class ChatRepository @Inject constructor(
     }
 
     private fun reconnectSignaling() {
-        signalingClient.connect("ws://10.0.2.2:3000") {
+        signalingClient.connect("wss://p2p-chat-dg66.onrender.com") {
             val register = JSONObject().apply {
                 put("type", "register")
                 put("phoneHash", myPhoneHash)
