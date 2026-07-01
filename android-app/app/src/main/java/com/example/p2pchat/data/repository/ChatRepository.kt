@@ -40,6 +40,7 @@ class ChatRepository @Inject constructor(
     private val networkMonitor: NetworkMonitor
 ) {
     private val scope = CoroutineScope(Dispatchers.IO)
+    private var myPhoneNumber: String = ""
     private var myPhoneHash: String = ""
     private var peerPhoneHash: String = ""
 
@@ -63,6 +64,7 @@ class ChatRepository @Inject constructor(
         if (isInitialized) return
         isInitialized = true
 
+        myPhoneNumber = phoneNumber
         myPhoneHash = HashUtils.hashPhoneNumber(phoneNumber)
         
         // Connect immediately on initialization
@@ -84,10 +86,14 @@ class ChatRepository @Inject constructor(
     }
 
     private fun reconnectSignaling() {
+        val routing = HashUtils.parsePhoneRoutingInfo(myPhoneNumber)
         signalingClient.connect("wss://p2p-chat-dg66.onrender.com") {
             val register = JSONObject().apply {
                 put("type", "register")
                 put("phoneHash", myPhoneHash)
+                put("countryCode", routing.countryCode)
+                put("areaCode", routing.areaCode)
+                put("subscriberHash", routing.subscriberHash)
             }
             signalingClient.sendMessage(register)
         }
