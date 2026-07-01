@@ -116,11 +116,13 @@ class ChatRepository @Inject constructor(
         peerPhoneHash = HashUtils.hashPhoneNumber(peerPhoneNumber)
         
         scope.launch {
+            val existing = directChatDao.getDirectChatByHash(peerPhoneHash)
             directChatDao.insertDirectChat(
                 DirectChatEntity(
                     peerPhoneNumber = peerPhoneNumber,
                     peerPhoneHash = peerPhoneHash,
-                    lastActiveTimestamp = System.currentTimeMillis()
+                    lastActiveTimestamp = System.currentTimeMillis(),
+                    isMessageRequest = false // Set to false to accept/activate the chat session
                 )
             )
         }
@@ -155,7 +157,7 @@ class ChatRepository @Inject constructor(
         val totalChunks = Math.ceil(fileBytes.size.toDouble() / chunkSize).toInt()
 
         scope.launch {
-            saveMessage("Sending file: $fileName", true, isMedia = true, fileTransferId = transferId)
+            saveMessage(peerPhoneHash, "Sending file: $fileName", true, isMedia = true, fileTransferId = transferId)
             
             for (i in 0 until totalChunks) {
                 val start = i * chunkSize
@@ -185,7 +187,7 @@ class ChatRepository @Inject constructor(
         }
     }
 
-    private fun handleIncomingData(data: ByteArray) {
+    private fun handleIncomingData(peerHash: String, data: ByteArray) {
         val buffer = java.nio.ByteBuffer.wrap(data)
         val headerSize = buffer.getInt()
         val headerBytes = ByteArray(headerSize)
@@ -209,21 +211,22 @@ class ChatRepository @Inject constructor(
                     // File complete!
                     val finalFile = fileBuffer.toByteArray()
                     fileBuffers.remove(transferId)
-                    saveFileToDisk(finalFile, fileName, transferId)
+                    saveFileToDisk(peerHash, finalFile, fileName, transferId)
                 }
             }
         }
     }
 
-    private fun saveFileToDisk(bytes: ByteArray, name: String, id: String) {
+    private fun saveFileToDisk(peerHash: String, bytes: ByteArray, name: String, id: String) {
         // In a real app, save to private storage and return URI
-        saveMessage("Received file: $name", false, isMedia = true, fileTransferId = id)
+        saveMessage(peerHash, "Received file: $name", false, isMedia = true, fileTransferId = id)
     }
 
     fun sendMessage(text: String) {
         val msg = JSONObject().apply {
             put("type", "text")
             put("content", text)
+            put("senderPhoneNumber", myPhoneNumber) // Expose raw number so B can display message request
         }
         val isDirectSuccess = webRTCManager.sendMessage(peerPhoneHash, msg.toString())
         
@@ -231,15 +234,31 @@ class ChatRepository @Inject constructor(
             initiateP2PHandshake()
         }
         
-        saveMessage(text, true)
+        saveMessage(peerPhoneHash, text, true)
     }
 
-    private fun saveMessage(content: String, isSent: Boolean, isMedia: Boolean = false, fileTransferId: String? = null) {
+    private fun saveDirectChatRequest(peerPhoneNumber: String, peerPhoneHash: String) {
+        scope.launch {
+            val existing = directChatDao.getDirectChatByHash(peerPhoneHash)
+            if (existing == null) {
+                directChatDao.insertDirectChat(
+                    DirectChatEntity(
+                        peerPhoneNumber = peerPhoneNumber,
+                        peerPhoneHash = peerPhoneHash,
+                        lastActiveTimestamp = System.currentTimeMillis(),
+                        isMessageRequest = true // Register as new request
+                    )
+                )
+            }
+        }
+    }
+
+    private fun saveMessage(peerHash: String, content: String, isSent: Boolean, isMedia: Boolean = false, fileTransferId: String? = null) {
         scope.launch {
             messageDao.insertMessage(
                 MessageEntity(
-                    senderId = if (isSent) myPhoneHash else peerPhoneHash,
-                    receiverId = if (isSent) peerPhoneHash else myPhoneHash,
+                    senderId = if (isSent) myPhoneHash else peerHash,
+                    receiverId = if (isSent) peerHash else myPhoneHash,
                     content = content,
                     timestamp = System.currentTimeMillis(),
                     isSent = isSent,
@@ -253,9 +272,6 @@ class ChatRepository @Inject constructor(
     private fun handleSignalingMessage(data: JSONObject) {
         val type = data.optString("type")
         val fromPhoneHash = data.optString("fromPhoneHash")
-        if (fromPhoneHash.isNotEmpty()) {
-            peerPhoneHash = fromPhoneHash
-        }
         val targetPeerId = if (fromPhoneHash.isNotEmpty()) fromPhoneHash else ""
 
         when (type) {
@@ -274,13 +290,12 @@ class ChatRepository @Inject constructor(
             "presence" -> {
                 val peerHash = data.optString("fromPhoneHash")
                 if (peerHash.isNotEmpty() && myPhoneHash.isNotEmpty()) {
-                    if (myPhoneHash > peerHash) {
-                        scope.launch {
-                            val activePeers = getActivePeerHashes()
-                            if (activePeers.contains(peerHash)) {
-                                setupPeerConnection(peerHash)
-                                webRTCManager.createDataChannel(peerHash, "chat")
-                                webRTCManager.createOffer(peerHash, object : SimpleSdpObserver() {
+                    scope.launch {
+                        val activePeers = getActivePeerHashes()
+                        if (activePeers.contains(peerHash)) {
+                            setupPeerConnection(peerHash)
+                            webRTCManager.createDataChannel(peerHash, "chat")
+                            webRTCManager.createOffer(peerHash, object : SimpleSdpObserver() {
                                     override fun onCreateSuccess(sdp: SessionDescription?) {
                                         sdp?.let {
                                             webRTCManager.setLocalDescription(peerHash, this, it)
@@ -297,7 +312,6 @@ class ChatRepository @Inject constructor(
                         }
                     }
                 }
-            }
             "group-create" -> {
                 val groupData = data.getJSONObject("groupData")
                 val groupId = groupData.getString("groupId")
@@ -397,7 +411,7 @@ class ChatRepository @Inject constructor(
                             data.get(bytes)
                             
                             if (buffer.binary) {
-                                handleIncomingData(bytes)
+                                handleIncomingData(targetPeerId, bytes)
                             } else {
                                 val text = String(bytes)
                                 try {
@@ -405,7 +419,11 @@ class ChatRepository @Inject constructor(
                                     when (json.optString("type")) {
                                         "text" -> {
                                             val content = json.getString("content")
-                                            saveMessage(content, false)
+                                            val senderPhone = json.optString("senderPhoneNumber")
+                                            if (senderPhone.isNotEmpty()) {
+                                                saveDirectChatRequest(senderPhone, targetPeerId)
+                                            }
+                                            saveMessage(targetPeerId, content, false)
                                             _incomingMessages.tryEmit(content)
                                         }
                                         "group-message" -> {
@@ -413,7 +431,7 @@ class ChatRepository @Inject constructor(
                                         }
                                     }
                                 } catch (e: Exception) {
-                                    saveMessage(text, false)
+                                    saveMessage(targetPeerId, text, false)
                                     _incomingMessages.tryEmit(text)
                                 }
                             }

@@ -7,5 +7,6 @@ import androidx.room.PrimaryKey
 data class DirectChatEntity(
     @PrimaryKey val peerPhoneNumber: String,
     val peerPhoneHash: String,
-    val lastActiveTimestamp: Long
+    val lastActiveTimestamp: Long,
+    val isMessageRequest: Boolean = false
 )

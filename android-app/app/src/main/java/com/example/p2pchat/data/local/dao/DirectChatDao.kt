@@ -17,4 +17,7 @@ interface DirectChatDao {
 
     @Query("SELECT peerPhoneHash FROM direct_chats")
     suspend fun getAllDirectChatHashes(): List<String>
+
+    @Query("SELECT * FROM direct_chats WHERE peerPhoneHash = :hash LIMIT 1")
+    suspend fun getDirectChatByHash(hash: String): DirectChatEntity?
 }
