@@ -116,7 +116,6 @@ class ChatRepository @Inject constructor(
         peerPhoneHash = HashUtils.hashPhoneNumber(peerPhoneNumber)
         
         scope.launch {
-            val existing = directChatDao.getDirectChatByHash(peerPhoneHash)
             directChatDao.insertDirectChat(
                 DirectChatEntity(
                     peerPhoneNumber = peerPhoneNumber,
@@ -133,7 +132,10 @@ class ChatRepository @Inject constructor(
     private fun initiateP2PHandshake() {
         if (peerPhoneHash.isEmpty()) return
         setupPeerConnection(peerPhoneHash)
-        webRTCManager.createDataChannel(peerPhoneHash, "chat")
+        val dc = webRTCManager.createDataChannel(peerPhoneHash, "chat")
+        dc?.let {
+            registerDataChannelObserver(peerPhoneHash, it)
+        }
         webRTCManager.createOffer(peerPhoneHash, object : SimpleSdpObserver() {
             override fun onCreateSuccess(sdp: SessionDescription?) {
                 sdp?.let {
@@ -269,6 +271,48 @@ class ChatRepository @Inject constructor(
         }
     }
 
+    private fun registerDataChannelObserver(targetPeerId: String, channel: DataChannel) {
+        channel.registerObserver(object : DataChannel.Observer {
+            override fun onBufferedAmountChange(p0: Long) {}
+            override fun onStateChange() {
+                if (channel.state() == DataChannel.State.OPEN) {
+                    // Connection ready
+                }
+            }
+            override fun onMessage(buffer: DataChannel.Buffer) {
+                val data = buffer.data
+                val bytes = ByteArray(data.remaining())
+                data.get(bytes)
+                
+                if (buffer.binary) {
+                    handleIncomingData(targetPeerId, bytes)
+                } else {
+                    val text = String(bytes)
+                    try {
+                        val json = JSONObject(text)
+                        when (json.optString("type")) {
+                            "text" -> {
+                                val content = json.getString("content")
+                                val senderPhone = json.optString("senderPhoneNumber")
+                                if (senderPhone.isNotEmpty()) {
+                                    saveDirectChatRequest(senderPhone, targetPeerId)
+                                }
+                                saveMessage(targetPeerId, content, false)
+                                _incomingMessages.tryEmit(content)
+                            }
+                            "group-message" -> {
+                                handleIncomingGroupMessage(json)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        saveMessage(targetPeerId, text, false)
+                        _incomingMessages.tryEmit(text)
+                    }
+                }
+            }
+        })
+    }
+
     private fun handleSignalingMessage(data: JSONObject) {
         val type = data.optString("type")
         val fromPhoneHash = data.optString("fromPhoneHash")
@@ -294,7 +338,8 @@ class ChatRepository @Inject constructor(
                         val activePeers = getActivePeerHashes()
                         if (activePeers.contains(peerHash)) {
                             setupPeerConnection(peerHash)
-                            webRTCManager.createDataChannel(peerHash, "chat")
+                            val dc = webRTCManager.createDataChannel(peerHash, "chat")
+                            dc?.let { registerDataChannelObserver(peerHash, it) }
                             webRTCManager.createOffer(peerHash, object : SimpleSdpObserver() {
                                     override fun onCreateSuccess(sdp: SessionDescription?) {
                                         sdp?.let {
@@ -398,45 +443,7 @@ class ChatRepository @Inject constructor(
             override fun onDataChannel(channel: DataChannel?) {
                 channel?.let {
                     webRTCManager.onRemoteDataChannel(targetPeerId, it)
-                    it.registerObserver(object : DataChannel.Observer {
-                        override fun onBufferedAmountChange(p0: Long) {}
-                        override fun onStateChange() {
-                            if (it.state() == DataChannel.State.OPEN) {
-                                // Keep connection open
-                            }
-                        }
-                        override fun onMessage(buffer: DataChannel.Buffer) {
-                            val data = buffer.data
-                            val bytes = ByteArray(data.remaining())
-                            data.get(bytes)
-                            
-                            if (buffer.binary) {
-                                handleIncomingData(targetPeerId, bytes)
-                            } else {
-                                val text = String(bytes)
-                                try {
-                                    val json = JSONObject(text)
-                                    when (json.optString("type")) {
-                                        "text" -> {
-                                            val content = json.getString("content")
-                                            val senderPhone = json.optString("senderPhoneNumber")
-                                            if (senderPhone.isNotEmpty()) {
-                                                saveDirectChatRequest(senderPhone, targetPeerId)
-                                            }
-                                            saveMessage(targetPeerId, content, false)
-                                            _incomingMessages.tryEmit(content)
-                                        }
-                                        "group-message" -> {
-                                            handleIncomingGroupMessage(json)
-                                        }
-                                    }
-                                } catch (e: Exception) {
-                                    saveMessage(targetPeerId, text, false)
-                                    _incomingMessages.tryEmit(text)
-                                }
-                            }
-                        }
-                    })
+                    registerDataChannelObserver(targetPeerId, it)
                 }
             }
         })
