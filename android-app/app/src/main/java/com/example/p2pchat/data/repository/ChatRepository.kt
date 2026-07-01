@@ -246,7 +246,7 @@ class ChatRepository @Inject constructor(
                         peerPhoneNumber = peerPhoneNumber,
                         peerPhoneHash = peerPhoneHash,
                         lastActiveTimestamp = System.currentTimeMillis(),
-                        isMessageRequest = true // Register as new request
+                        isMessageRequest = false // Immediately active direct chat session
                     )
                 )
             }

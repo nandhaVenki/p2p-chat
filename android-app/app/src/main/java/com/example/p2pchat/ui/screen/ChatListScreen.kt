@@ -87,25 +87,7 @@ fun ChatListScreen(viewModel: ChatViewModel, onChatSelected: (String, Boolean) -
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
                         items(activeChats) { chat ->
                             ListItem(
-                                headlineContent = {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(chat.peerPhoneNumber)
-                                        if (chat.isMessageRequest) {
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Surface(
-                                                color = MaterialTheme.colorScheme.primaryContainer,
-                                                shape = MaterialTheme.shapes.extraSmall
-                                            ) {
-                                                Text(
-                                                    text = "Request",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                                                )
-                                            }
-                                        }
-                                    }
-                                },
+                                headlineContent = { Text(chat.peerPhoneNumber) },
                                 leadingContent = { 
                                     Surface(shape = MaterialTheme.shapes.small, color = EmeraldGreen.copy(alpha = 0.1f), modifier = Modifier.size(40.dp)) {
                                         Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.padding(8.dp), tint = EmeraldGreen)
