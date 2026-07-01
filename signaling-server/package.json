@@ -1,5 +1,5 @@
 {
-  "name": "signaling-server",
+  "name": "p2p-chat-signaling-server",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",

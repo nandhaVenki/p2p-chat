@@ -18,5 +18,5 @@ dependencyResolutionManagement {
         maven { url = uri("https://raw.githubusercontent.com/QuickBlox/quickblox-android-sdk-releases/master/") }
     }
 }
-rootProject.name = "P2PChat"
+rootProject.name = "P2P Chat"
 include(":app")
