@@ -19,4 +19,7 @@ interface MessageDao {
 
     @Insert
     suspend fun insertMessage(message: MessageEntity)
+
+    @Query("SELECT DISTINCT CASE WHEN senderId = :myId THEN receiverId ELSE senderId END FROM messages WHERE groupId IS NULL OR groupId = ''")
+    suspend fun getDirectPeers(myId: String): List<String>
 }

@@ -19,6 +19,9 @@ interface GroupDao {
     @Query("SELECT memberPhoneHash FROM group_members WHERE groupId = :groupId")
     suspend fun getGroupMemberHashes(groupId: String): List<String>
 
+    @Query("SELECT DISTINCT memberPhoneHash FROM group_members")
+    suspend fun getAllGroupMembers(): List<String>
+
     @Query("SELECT * FROM group_members WHERE groupId = :groupId")
     fun getGroupMembers(groupId: String): Flow<List<GroupMemberEntity>>
 

@@ -234,6 +234,45 @@ class ChatRepository @Inject constructor(
         val targetPeerId = if (fromPhoneHash.isNotEmpty()) fromPhoneHash else ""
 
         when (type) {
+            "registered" -> {
+                scope.launch {
+                    val activePeers = getActivePeerHashes()
+                    if (activePeers.isNotEmpty()) {
+                        val presenceBroadcast = JSONObject().apply {
+                            put("type", "presence")
+                            put("targets", org.json.JSONArray(activePeers))
+                        }
+                        signalingClient.sendMessage(presenceBroadcast)
+                    }
+                }
+            }
+            "presence" -> {
+                val peerHash = data.optString("fromPhoneHash")
+                if (peerHash.isNotEmpty() && myPhoneHash.isNotEmpty()) {
+                    if (myPhoneHash > peerHash) {
+                        scope.launch {
+                            val activePeers = getActivePeerHashes()
+                            if (activePeers.contains(peerHash)) {
+                                setupPeerConnection(peerHash)
+                                webRTCManager.createDataChannel(peerHash, "chat")
+                                webRTCManager.createOffer(peerHash, object : SimpleSdpObserver() {
+                                    override fun onCreateSuccess(sdp: SessionDescription?) {
+                                        sdp?.let {
+                                            webRTCManager.setLocalDescription(peerHash, this, it)
+                                            val offer = JSONObject().apply {
+                                                put("type", "offer")
+                                                put("toPhoneHash", peerHash)
+                                                put("sdp", it.description)
+                                            }
+                                            signalingClient.sendMessage(offer)
+                                        }
+                                    }
+                                })
+                            }
+                        }
+                    }
+                }
+            }
             "group-create" -> {
                 val groupData = data.getJSONObject("groupData")
                 val groupId = groupData.getString("groupId")
@@ -618,6 +657,15 @@ class ChatRepository @Inject constructor(
             e.printStackTrace()
             _incomingMessages.tryEmit("Failed to parse manual answer: ${e.localizedMessage}")
         }
+    }
+
+    private suspend fun getActivePeerHashes(): List<String> {
+        val hashes = mutableListOf<String>()
+        val groupMembers = groupDao.getAllGroupMembers()
+        hashes.addAll(groupMembers)
+        val directPeers = messageDao.getDirectPeers(myPhoneHash)
+        hashes.addAll(directPeers)
+        return hashes.filter { it.isNotEmpty() && it != myPhoneHash }.distinct()
     }
 }
 
