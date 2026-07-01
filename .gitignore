@@ -1,0 +1,19 @@
+# Android build and IDE files
+.gradle/
+.idea/
+build/
+app/build/
+local.properties
+.cxx/
+*.apk
+*.aar
+*.keystore
+*.jks
+
+# Node.js dependencies and databases
+signaling-server/node_modules/
+signaling-server/registered_users.json
+
+# OS files
+.DS_Store
+Thumbs.db
