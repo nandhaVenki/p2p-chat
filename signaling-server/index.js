@@ -8,6 +8,52 @@ const app = express();
 const port = process.env.PORT || 3000;
 const dbPath = path.join(__dirname, 'registered_users.json');
 
+// Initialize Firebase Admin SDK if serviceAccountKey.json is present
+let firebaseAdmin = null;
+const serviceAccountPath = path.join(__dirname, 'serviceAccountKey.json');
+if (fs.existsSync(serviceAccountPath)) {
+    try {
+        firebaseAdmin = require('firebase-admin');
+        const serviceAccount = require(serviceAccountPath);
+        firebaseAdmin.initializeApp({
+            credential: firebaseAdmin.credential.cert(serviceAccount)
+        });
+        console.log('Firebase Admin SDK initialized successfully.');
+    } catch (e) {
+        console.error('Error initializing Firebase Admin SDK:', e);
+    }
+} else {
+    console.warn('Firebase serviceAccountKey.json not found. FCM push notifications will be disabled.');
+}
+
+// Helper to relay signaling via FCM push notifications
+function sendFcmMessage(fcmToken, payload) {
+    if (!firebaseAdmin) {
+        console.warn('FCM push skipped: Firebase Admin SDK is not initialized.');
+        return;
+    }
+    
+    const message = {
+        data: {
+            type: payload.type,
+            fromPhoneHash: payload.fromPhoneHash || '',
+            sdp: payload.sdp || '',
+            candidate: payload.candidate || '',
+            sdpMLineIndex: payload.sdpMLineIndex != null ? String(payload.sdpMLineIndex) : '',
+            sdpMid: payload.sdpMid || ''
+        },
+        token: fcmToken
+    };
+
+    firebaseAdmin.messaging().send(message)
+        .then((response) => {
+            console.log('Successfully sent FCM push notification:', response);
+        })
+        .catch((error) => {
+            console.error('Error sending FCM push:', error);
+        });
+}
+
 // Trie Data Structure for hierarchical indexing
 class TrieNode {
     constructor() {
@@ -41,6 +87,8 @@ class Trie {
         
         // 3. Leaf Node: Hashed Subscriber ID
         node.children[subscriber] = {
+            phoneHash: details.phoneHash || null,
+            fcmToken: details.fcmToken || null,
             lastKnownIp: details.lastKnownIp,
             status: details.status,
             lastSeen: new Date().toISOString()
@@ -61,6 +109,30 @@ class Trie {
         }
         
         return node.children[subscriber] || null;
+    }
+
+    // Find a user's leaf node recursively using their phoneHash
+    findLeafByPhoneHash(phoneHash) {
+        function scan(node) {
+            if (!node) return null;
+            if (node.phoneHash === phoneHash) {
+                return node;
+            }
+            for (const key in node.children) {
+                const result = scan(node.children[key]);
+                if (result) return result;
+            }
+            // Fallback for raw JSON objects loaded from disk
+            for (const key in node) {
+                if (key === 'children') continue;
+                if (node[key] && typeof node[key] === 'object') {
+                    const result = scan(node[key]);
+                    if (result) return result;
+                }
+            }
+            return null;
+        }
+        return scan(this.root);
     }
 }
 
@@ -145,12 +217,25 @@ wss.on('connection', (ws, req) => {
                     
                     // Persist registration record in Trie tree
                     trie.insert(country, area, subscriber, {
+                        phoneHash: currentPhoneHash,
+                        fcmToken: data.fcmToken || null,
                         lastKnownIp: ip,
                         status: 'online'
                     });
                     saveTrieDatabase();
 
                     ws.send(JSON.stringify({ type: 'registered', phoneHash: currentPhoneHash }));
+                    break;
+
+                case 'update-token':
+                    if (currentPhoneHash) {
+                        const leaf = trie.findLeafByPhoneHash(currentPhoneHash);
+                        if (leaf) {
+                            leaf.fcmToken = data.fcmToken;
+                            saveTrieDatabase();
+                            console.log(`Updated FCM token for ${currentPhoneHash}`);
+                        }
+                    }
                     break;
 
                 case 'offer':
@@ -163,8 +248,17 @@ wss.on('connection', (ws, req) => {
                             fromPhoneHash: currentPhoneHash
                         }));
                     } else {
-                        console.log(`Target hash ${data.toPhoneHash} not found or not connected for ${data.type}`);
-                        ws.send(JSON.stringify({ type: 'error', message: `User is offline` }));
+                        console.log(`Target hash ${data.toPhoneHash} is offline. Attempting FCM relay...`);
+                        const leaf = trie.findLeafByPhoneHash(data.toPhoneHash);
+                        if (leaf && leaf.fcmToken) {
+                            sendFcmMessage(leaf.fcmToken, {
+                                ...data,
+                                fromPhoneHash: currentPhoneHash
+                            });
+                        } else {
+                            console.log(`No FCM token registered for offline target: ${data.toPhoneHash}`);
+                            ws.send(JSON.stringify({ type: 'error', message: `User is offline and has no push registry` }));
+                        }
                     }
                     break;
 
@@ -183,7 +277,10 @@ wss.on('connection', (ws, req) => {
             
             // Mark user status as offline in Trie
             if (ws.countryCode && ws.areaCode && ws.subscriberHash) {
+                const leaf = trie.find(ws.countryCode, ws.areaCode, ws.subscriberHash);
                 trie.insert(ws.countryCode, ws.areaCode, ws.subscriberHash, {
+                    phoneHash: currentPhoneHash,
+                    fcmToken: leaf ? leaf.fcmToken : null,
                     lastKnownIp: ip,
                     status: 'offline'
                 });

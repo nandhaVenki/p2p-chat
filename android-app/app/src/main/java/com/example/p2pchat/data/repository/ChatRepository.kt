@@ -27,6 +27,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 import com.example.p2pchat.network.NetworkMonitor
+import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
 
 import com.example.p2pchat.util.HashUtils
 
@@ -37,12 +39,14 @@ class ChatRepository @Inject constructor(
     private val groupDao: GroupDao,
     private val signalingClient: SignalingClient,
     private val webRTCManager: WebRTCManager,
-    private val networkMonitor: NetworkMonitor
+    private val networkMonitor: NetworkMonitor,
+    @ApplicationContext private val context: Context
 ) {
     private val scope = CoroutineScope(Dispatchers.IO)
     private var myPhoneNumber: String = ""
     private var myPhoneHash: String = ""
     private var peerPhoneHash: String = ""
+    private var myFcmToken: String = ""
 
     val userProfile: Flow<UserProfileEntity?> = userProfileDao.getUserProfile()
 
@@ -67,6 +71,9 @@ class ChatRepository @Inject constructor(
         myPhoneNumber = phoneNumber
         myPhoneHash = HashUtils.hashPhoneNumber(phoneNumber)
         
+        val sharedPrefs = context.getSharedPreferences("p2p_chat_prefs", Context.MODE_PRIVATE)
+        myFcmToken = sharedPrefs.getString("fcm_token", "") ?: ""
+
         // Connect immediately on initialization
         reconnectSignaling()
         
@@ -94,6 +101,9 @@ class ChatRepository @Inject constructor(
                 put("countryCode", routing.countryCode)
                 put("areaCode", routing.areaCode)
                 put("subscriberHash", routing.subscriberHash)
+                if (myFcmToken.isNotEmpty()) {
+                    put("fcmToken", myFcmToken)
+                }
             }
             signalingClient.sendMessage(register)
         }
@@ -666,6 +676,23 @@ class ChatRepository @Inject constructor(
         val directPeers = messageDao.getDirectPeers(myPhoneHash)
         hashes.addAll(directPeers)
         return hashes.filter { it.isNotEmpty() && it != myPhoneHash }.distinct()
+    }
+
+    fun updateFcmToken(token: String) {
+        myFcmToken = token
+        if (isInitialized && myPhoneHash.isNotEmpty()) {
+            scope.launch {
+                val tokenUpdate = JSONObject().apply {
+                    put("type", "update-token")
+                    put("fcmToken", token)
+                }
+                signalingClient.sendMessage(tokenUpdate)
+            }
+        }
+    }
+
+    fun handleIncomingFcmSignaling(data: JSONObject) {
+        handleSignalingMessage(data)
     }
 }
 
