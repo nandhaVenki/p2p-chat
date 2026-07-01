@@ -3,10 +3,12 @@ package com.example.p2pchat.data.repository
 import com.example.p2pchat.data.local.dao.MessageDao
 import com.example.p2pchat.data.local.dao.UserProfileDao
 import com.example.p2pchat.data.local.dao.GroupDao
+import com.example.p2pchat.data.local.dao.DirectChatDao
 import com.example.p2pchat.data.local.entity.MessageEntity
 import com.example.p2pchat.data.local.entity.UserProfileEntity
 import com.example.p2pchat.data.local.entity.GroupEntity
 import com.example.p2pchat.data.local.entity.GroupMemberEntity
+import com.example.p2pchat.data.local.entity.DirectChatEntity
 import com.example.p2pchat.signaling.SignalingClient
 import com.example.p2pchat.webrtc.WebRTCManager
 import kotlinx.coroutines.CoroutineScope
@@ -37,6 +39,7 @@ class ChatRepository @Inject constructor(
     private val messageDao: MessageDao,
     private val userProfileDao: UserProfileDao,
     private val groupDao: GroupDao,
+    private val directChatDao: DirectChatDao,
     private val signalingClient: SignalingClient,
     private val webRTCManager: WebRTCManager,
     private val networkMonitor: NetworkMonitor,
@@ -111,6 +114,17 @@ class ChatRepository @Inject constructor(
 
     fun startChatWith(peerPhoneNumber: String) {
         peerPhoneHash = HashUtils.hashPhoneNumber(peerPhoneNumber)
+        
+        scope.launch {
+            directChatDao.insertDirectChat(
+                DirectChatEntity(
+                    peerPhoneNumber = peerPhoneNumber,
+                    peerPhoneHash = peerPhoneHash,
+                    lastActiveTimestamp = System.currentTimeMillis()
+                )
+            )
+        }
+        
         initiateP2PHandshake()
     }
 
@@ -670,11 +684,13 @@ class ChatRepository @Inject constructor(
         }
     }
 
+    fun getDirectChats(): Flow<List<DirectChatEntity>> = directChatDao.getDirectChats()
+
     private suspend fun getActivePeerHashes(): List<String> {
         val hashes = mutableListOf<String>()
         val groupMembers = groupDao.getAllGroupMembers()
         hashes.addAll(groupMembers)
-        val directPeers = messageDao.getDirectPeers(myPhoneHash)
+        val directPeers = directChatDao.getAllDirectChatHashes()
         hashes.addAll(directPeers)
         return hashes.filter { it.isNotEmpty() && it != myPhoneHash }.distinct()
     }

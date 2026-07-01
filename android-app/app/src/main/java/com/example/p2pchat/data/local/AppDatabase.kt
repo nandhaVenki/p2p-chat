@@ -11,18 +11,23 @@ import com.example.p2pchat.data.local.dao.GroupDao
 import com.example.p2pchat.data.local.entity.GroupEntity
 import com.example.p2pchat.data.local.entity.GroupMemberEntity
 
+import com.example.p2pchat.data.local.dao.DirectChatDao
+import com.example.p2pchat.data.local.entity.DirectChatEntity
+
 @Database(
     entities = [
         MessageEntity::class,
         UserProfileEntity::class,
         GroupEntity::class,
-        GroupMemberEntity::class
+        GroupMemberEntity::class,
+        DirectChatEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
     abstract fun userProfileDao(): UserProfileDao
     abstract fun groupDao(): GroupDao
+    abstract fun directChatDao(): DirectChatDao
 }

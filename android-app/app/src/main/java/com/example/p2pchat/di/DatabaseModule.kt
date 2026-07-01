@@ -6,6 +6,7 @@ import com.example.p2pchat.data.local.AppDatabase
 import com.example.p2pchat.data.local.dao.MessageDao
 import com.example.p2pchat.data.local.dao.UserProfileDao
 import com.example.p2pchat.data.local.dao.GroupDao
+import com.example.p2pchat.data.local.dao.DirectChatDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -40,5 +41,10 @@ object DatabaseModule {
     @Provides
     fun provideGroupDao(db: AppDatabase): GroupDao {
         return db.groupDao()
+    }
+
+    @Provides
+    fun provideDirectChatDao(db: AppDatabase): DirectChatDao {
+        return db.directChatDao()
     }
 }

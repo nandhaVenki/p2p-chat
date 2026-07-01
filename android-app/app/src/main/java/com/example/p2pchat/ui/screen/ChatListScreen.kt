@@ -29,7 +29,7 @@ fun ChatListScreen(viewModel: ChatViewModel, onChatSelected: (String, Boolean) -
     
     var selectedTab by remember { mutableStateOf(0) } // 0: Chats, 1: Groups
     
-    val activeChats = remember { mutableStateListOf<String>() }
+    val activeChats by viewModel.activeChats.collectAsState()
     val groups by viewModel.groups.collectAsState()
 
     Scaffold(
@@ -85,15 +85,15 @@ fun ChatListScreen(viewModel: ChatViewModel, onChatSelected: (String, Boolean) -
                     }
                 } else {
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(activeChats) { peerId ->
+                        items(activeChats) { chat ->
                             ListItem(
-                                headlineContent = { Text(peerId) },
+                                headlineContent = { Text(chat.peerPhoneNumber) },
                                 leadingContent = { 
                                     Surface(shape = MaterialTheme.shapes.small, color = EmeraldGreen.copy(alpha = 0.1f), modifier = Modifier.size(40.dp)) {
                                         Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.padding(8.dp), tint = EmeraldGreen)
                                     }
                                 },
-                                modifier = Modifier.clickable { onChatSelected(peerId, false) }
+                                modifier = Modifier.clickable { onChatSelected(chat.peerPhoneNumber, false) }
                             )
                             Divider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp, color = Color.LightGray)
                         }
@@ -140,7 +140,6 @@ fun ChatListScreen(viewModel: ChatViewModel, onChatSelected: (String, Boolean) -
                 confirmButton = {
                     Button(onClick = {
                         if (peerPhoneNumber.isNotBlank()) {
-                            activeChats.add(peerPhoneNumber)
                             showAddChatDialog = false
                             onChatSelected(peerPhoneNumber, false)
                         }

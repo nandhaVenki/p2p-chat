@@ -45,6 +45,9 @@ class ChatViewModel @Inject constructor(
     val groups: StateFlow<List<GroupEntity>> = repository.getGroups()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val activeChats: StateFlow<List<com.example.p2pchat.data.local.entity.DirectChatEntity>> = repository.getDirectChats()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val connectionStatus: StateFlow<ConnectionStatus> = repository.connectionStatus
 
     val isPremium: StateFlow<Boolean> = combine(
