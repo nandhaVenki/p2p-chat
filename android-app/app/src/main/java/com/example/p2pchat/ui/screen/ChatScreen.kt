@@ -37,59 +37,11 @@ fun ChatScreen(viewModel: ChatViewModel, peerId: String, onBack: () -> Unit) {
     val activity = context as? Activity
     
     var messageText by remember { mutableStateOf("") }
-    
-    var manualSdpInput by remember { mutableStateOf("") }
-    var showSdpDialog by remember { mutableStateOf(false) }
-    var sdpToDisplay by remember { mutableStateOf("") }
 
     val messages by viewModel.messages.collectAsState()
     val isPremium by viewModel.isPremium.collectAsState()
     val connectionStatus by viewModel.connectionStatus.collectAsState()
 
-    if (showSdpDialog) {
-        AlertDialog(
-            onDismissRequest = { showSdpDialog = false },
-            title = { Text("Share Secure Identity") },
-            text = { 
-                Column {
-                    Text(
-                        "Send this secure code to your peer to establish a private P2P connection.",
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    OutlinedCard(
-                        modifier = Modifier.fillMaxWidth().height(150.dp)
-                    ) {
-                        Text(
-                            text = sdpToDisplay, 
-                            style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.padding(8.dp).fillMaxSize(),
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                Button(onClick = { 
-                    val sendIntent: Intent = Intent().apply {
-                        action = Intent.ACTION_SEND
-                        putExtra(Intent.EXTRA_TEXT, "P2P_CONNECT:$sdpToDisplay")
-                        type = "text/plain"
-                    }
-                    val shareIntent = Intent.createChooser(sendIntent, null)
-                    context.startActivity(shareIntent)
-                    showSdpDialog = false 
-                }) {
-                    Text("Share Code")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSdpDialog = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
 
     Scaffold(
         topBar = {
@@ -139,49 +91,7 @@ fun ChatScreen(viewModel: ChatViewModel, peerId: String, onBack: () -> Unit) {
                 .background(if (isSystemInDarkTheme()) DarkBackgroundColor else BackgroundColor)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                Surface(shadowElevation = 2.dp) {
-                    Column(modifier = Modifier.padding(8.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                            Button(
-                                onClick = { 
-                                    viewModel.createManualOffer { sdp -> sdpToDisplay = sdp; showSdpDialog = true }
-                                },
-                                modifier = Modifier.weight(1f).padding(4.dp)
-                            ) { Text("1. Invite", style = MaterialTheme.typography.labelSmall) }
-                            
-                            Button(
-                                onClick = { 
-                                    if (manualSdpInput.isNotEmpty()) {
-                                        viewModel.acceptManualOffer(manualSdpInput) { answer ->
-                                            sdpToDisplay = answer; showSdpDialog = true; manualSdpInput = ""
-                                        }
-                                    }
-                                },
-                                modifier = Modifier.weight(1f).padding(4.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
-                            ) { Text("2. Reply", style = MaterialTheme.typography.labelSmall) }
 
-                            Button(
-                                onClick = { 
-                                    if (manualSdpInput.isNotEmpty()) {
-                                        viewModel.acceptManualAnswer(manualSdpInput)
-                                        manualSdpInput = ""
-                                    }
-                                },
-                                modifier = Modifier.weight(1f).padding(4.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = DeepEmerald)
-                            ) { Text("3. Finalize", style = MaterialTheme.typography.labelSmall) }
-                        }
-                        
-                        TextField(
-                            value = manualSdpInput,
-                            onValueChange = { manualSdpInput = it },
-                            placeholder = { Text("Paste code from peer here...") },
-                            modifier = Modifier.fillMaxWidth().height(56.dp),
-                            textStyle = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
 
                 LazyColumn(
                     modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
