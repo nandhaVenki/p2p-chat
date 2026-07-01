@@ -115,12 +115,13 @@ class ChatRepository @Inject constructor(
     }
 
     private fun initiateP2PHandshake() {
-        setupPeerConnection()
-        webRTCManager.createDataChannel("", "chat")
-        webRTCManager.createOffer("", object : SimpleSdpObserver() {
+        if (peerPhoneHash.isEmpty()) return
+        setupPeerConnection(peerPhoneHash)
+        webRTCManager.createDataChannel(peerPhoneHash, "chat")
+        webRTCManager.createOffer(peerPhoneHash, object : SimpleSdpObserver() {
             override fun onCreateSuccess(sdp: SessionDescription?) {
                 sdp?.let {
-                    webRTCManager.setLocalDescription("", this, it)
+                    webRTCManager.setLocalDescription(peerPhoneHash, this, it)
                     val offer = JSONObject().apply {
                         put("type", "offer")
                         put("toPhoneHash", peerPhoneHash)
@@ -162,7 +163,7 @@ class ChatRepository @Inject constructor(
                 packet.put(headerBytes)
                 packet.put(chunk)
                 
-                val success = webRTCManager.sendData("", packet.array())
+                val success = webRTCManager.sendData(peerPhoneHash, packet.array())
                 if (!success) break // Handle P2P failure
                 
                 kotlinx.coroutines.delay(20) // Tiny delay to prevent DataChannel overflow
@@ -210,7 +211,7 @@ class ChatRepository @Inject constructor(
             put("type", "text")
             put("content", text)
         }
-        val isDirectSuccess = webRTCManager.sendMessage("", msg.toString())
+        val isDirectSuccess = webRTCManager.sendMessage(peerPhoneHash, msg.toString())
         
         if (!isDirectSuccess) {
             initiateP2PHandshake()
